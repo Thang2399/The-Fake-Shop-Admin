@@ -5,6 +5,8 @@ from fastapi.openapi.utils import get_openapi
 
 from app.routes.health import router as health_router
 from app.routes.items import router as items_router
+from app.routes.brand import router as brand_router
+from app.routes.category import router as category_router
 
 app = FastAPI(
     title="The Fake Shop Admin API",
@@ -48,4 +50,6 @@ security_scheme = HTTPBearer()
 
 app.include_router(health_router)
 app.include_router(items_router)
+app.include_router(brand_router)
+app.include_router(category_router)
 
