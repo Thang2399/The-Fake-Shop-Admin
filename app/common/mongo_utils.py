@@ -1,7 +1,9 @@
 from typing import Any, Dict, Iterable, Tuple, Set,List
-from bson import ObjectId
+from datetime import date, datetime
+from bson import ObjectId, Decimal128
 from fastapi import HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorCollection
+import base64
 
 
 def to_object_id(id_str: str) -> ObjectId:
@@ -10,14 +12,23 @@ def to_object_id(id_str: str) -> ObjectId:
     return ObjectId(id_str)
 
 def serialize_document(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert objectId to string for JSON serialization."""
-    _id = doc.get("_id")
-    out = {k: v for k, v in doc.items() if k != "_id"}
-    if isinstance(_id, ObjectId):
-        out["_id"] = str(_id)
-    elif _id is not None:
-        out["_id"] = str(_id)
-    return out
+    """Recursively convert Mongo/BSON types to JSON-safe values."""
+    def conv(v: Any):
+        if isinstance(v, ObjectId):
+            return str(v)
+        if isinstance(v, (datetime, date)):
+            return v.isoformat()
+        if isinstance(v, Decimal128):
+            return float(v.to_decimal())
+        if isinstance(v, bytes):
+            return base64.b64encode(v).decode("utf-8")
+        if isinstance(v, dict):
+            return {k: conv(x) for k, x in v.items()}
+        if isinstance(v, (list, tuple, set)):
+            return [conv(x) for x in v]
+        return v
+
+    return conv(doc)
 
 async def find_existing_and_missing_ids(
     collection: AsyncIOMotorCollection,
@@ -42,3 +53,18 @@ async def find_existing_and_missing_ids(
         existing_ids = {str(doc[id_field]) for doc in existing}
         not_found = [i for i in ids_list if i not in existing_ids]
     return existing_ids, not_found
+
+def extract_ids(items: List[Dict[str, Any]] | None, key: str) -> List[str]:
+    """From a list of dicts, pick string IDs under `key` (accepts str or ObjectId)."""
+    out: List[str] = []
+    if not items:
+        return out
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        v = it.get(key)
+        if isinstance(v, ObjectId):
+            out.append(str(v))
+        elif isinstance(v, str):
+            out.append(v.strip())
+    return out
